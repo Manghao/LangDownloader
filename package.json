@@ -1,0 +1,33 @@
+{
+  "name": "langdownloader",
+  "version": "1.0.0",
+  "description": "Download lang on AnkamaGames",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon ./index.js -e js"
+  },
+  "keywords": [
+    "AnkamaGames",
+    "Lang",
+    "Dofus",
+    "Dofus1.29",
+    "AG"
+  ],
+  "author": "Manghao",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "mkdirp": "^0.5.1",
+    "request": "^2.88.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Manghao/LangDownloader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Manghao/LangDownloader/issues"
+  },
+  "homepage": "https://github.com/Manghao/LangDownloader#readme"
+}
