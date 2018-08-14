@@ -14,7 +14,7 @@
 ## Setup
 ```shell
 $ git clone git@github.com:Manghao/LangDownloader.git
-$ LangDownloader
+$ cd LangDownloader
 $ npm i
 ```
 
