@@ -15,7 +15,7 @@ const agLang = 'http://staticns.ankama.com/dofus/gamedata/dofus/lang'
 const out = path.resolve('out/lang')
 const outSwf = path.resolve(`${out}/swf`)
 
-// Creare outputs folder
+// Create outputs folder
 try {
   mkdirp(outSwf, (err) => {
     if (err) console.error(err)
@@ -28,6 +28,11 @@ try {
 
       // Download file with file version inside
       request.get(`${agLang}/versions_${language}.txt`, (req, res) => {
+      	const stream = fs.createWriteStream(`${out}/versions_${language}.txt`);
+		stream.once('open', fd => {
+			stream.write(res.body);
+			stream.end();
+		});
         const regex = new RegExp(/([a-zA-Z]*,[a-z]*,[0-9]*)/g)
         let matchs = []
         let match = null
