@@ -9,7 +9,7 @@ const request = require('request')
 const languages = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt']
 
 // URL AG
-const agLang = 'http://staticns.ankama.com/dofus/gamedata/dofus/lang'
+const agLang = 'http://dofusretro.cdn.ankama.com/lang'
 
 // Output
 const out = path.resolve('out/lang')
