@@ -1,6 +1,6 @@
 {
   "name": "langdownloader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Download lang on AnkamaGames",
   "main": "index.js",
   "scripts": {
