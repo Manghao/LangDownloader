@@ -1,62 +1,97 @@
-const start = hrstart = process.hrtime()
+const fs = require('fs');
+const { mkdir, stat, readFile } = fs.promises;
+const path = require('path');
+const http = require('http');
 
-const mkdirp = require('mkdirp')
-const fs = require('fs')
-const path = require('path')
-const request = require('request')
+const outSwf = path.resolve(process.cwd(), 'out', 'lang', 'swf');
 
-// Lang languages
-const languages = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt']
+async function createFolders(dirPath) {
+  try {
+    await stat(dirPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      await mkdir(dirPath, { recursive: true });
+      return Promise.resolve();
+    }
+    return Promise.reject(err);
+  }
 
-// URL AG
-const agLang = 'http://dofusretro.cdn.ankama.com/lang'
-
-// Output
-const out = path.resolve('out/lang')
-const outSwf = path.resolve(`${out}/swf`)
-
-// Create outputs folder
-try {
-  mkdirp(outSwf, (err) => {
-    if (err) console.error(err)
-
-    // Download versions.swf
-    request.get(`${agLang}/versions.swf`).pipe(fs.createWriteStream(`${out}/versions.swf`))
-
-    // Download all langs by language
-    languages.forEach(language => {
-
-      // Download file with file version inside
-      request.get(`${agLang}/versions_${language}.txt`, (req, res) => {
-      	const stream = fs.createWriteStream(`${out}/versions_${language}.txt`);
-		stream.once('open', fd => {
-			stream.write(res.body);
-			stream.end();
-		});
-        const regex = new RegExp(/([a-zA-Z]*,[a-z]*,[0-9]*)/g)
-        let matchs = []
-        let match = null
-      
-        // Get all occurances (FILE_LANGAUAGE_VERSION)
-        while (match = regex.exec(res.body)) {
-          matchs.push(match)
-        }
-      
-        // Browse all occurances
-        matchs.forEach(m => {
-          // Regex to get all params, (file, language, version)
-          const data = /([a-zA-Z]*),([a-z]*),([0-9]*)/g.exec(m[0])
-          
-          // Download swf file
-          request.get(`${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf`).pipe(fs.createWriteStream(`${outSwf}/${data[1]}_${data[2]}_${data[3]}.swf`))
-        })
-      })
-    })
-
-    const hrend = process.hrtime(hrstart)
-
-    console.log(`All langs downloaded in ${Math.ceil(hrend[1] / 1000000)} ms !`)
-  })
-} catch (error) {
-  console.error(error)
+  return Promise.resolve();
 }
+
+function download(url, dest) {
+  http.get(`${url}`, (response) => {
+    const file = fs.createWriteStream(dest);
+    response.pipe(file);
+  }).on('error', (err) => {
+    fs.unlink(dest);
+    return Promise.reject(err);
+  });
+}
+
+async function downloadFiles(outDir) {
+  const languages = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt'];
+
+  const agLang = 'http://dofusretro.cdn.ankama.com/lang';
+
+  const parentDir = path.dirname(outDir);
+
+  console.log(`Downloading [${agLang}/versions.swf] file`);
+  try {
+    await download(`${agLang}/versions.swf`, `${parentDir}/versions.swf`);
+  } catch (err) {
+    console.error(err);
+    console.error(`Cannot download file [${agLang}/versions.swf]`);
+  }
+
+  for (let i = 0; i < languages.length; i += 1) {
+    const language = languages[i];
+
+    console.log(`Downloading [${agLang}/versions_${language}.txt] file`);
+    try {
+      await download(`${agLang}/versions_${language}.txt`, `${parentDir}/versions_${language}.txt`);
+    } catch (err) {
+      console.error(err);
+      console.error(`Cannot download file [${agLang}/versions_${language}.txt]`);
+    }
+
+    let fileContent;
+    try {
+      fileContent = await readFile(`${parentDir}/versions_${language}.txt`, { encoding: 'utf8' });
+    } catch (err) {
+      console.error(err);
+      console.error(`Cannot read file [${parentDir}/versions_${language}.txt]`);
+    }
+
+    if (fileContent.length <= 0) {
+      console.error(`File [${parentDir}/versions_${language}.txt] is empty`);
+      continue;
+    }
+
+    const reg = new RegExp(/([a-zA-Z]*,[a-z]*,[0-9]*)/g);
+    const matchs = [];
+    let match = null;
+
+    // Get all occurances (FILE_LANGAUAGE_VERSION)
+    while (match = reg.exec(fileContent)) {
+      matchs.push(match);
+    }
+
+    for (let j = 0; j < matchs.length; j += 1) {
+      const [m] = matchs[j];
+      const data = /([a-zA-Z]*),([a-z]*),([0-9]*)/g.exec(m);
+
+      console.log(`Downloading [${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf] file`);
+      try {
+        await download(`${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf`, `${outDir}/${data[1]}_${data[2]}_${data[3]}.swf`);
+      } catch (err) {
+        console.error(err);
+        console.error(`Cannot download file [${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf]`);
+      }
+    }
+  }
+}
+
+createFolders(outSwf)
+  .then(downloadFiles(outSwf))
+  .catch(console.error);
