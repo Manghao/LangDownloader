@@ -3,7 +3,7 @@
 > Download Dofus 1.29 langs file up-to-date
 
 ## Version
-+ 1.0.1
++ 2.0.0
 
 ## Author
 + Manghao
