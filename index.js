@@ -1,9 +1,11 @@
 const fs = require('fs');
+
 const { mkdir, stat, readFile } = fs.promises;
 const path = require('path');
-const http = require('http');
+const { Readable } = require('stream');
+const { finished } = require('stream/promises');
 
-const outSwf = path.resolve(process.cwd(), 'out', 'lang', 'swf');
+const config = require('./config');
 
 async function createFolders(dirPath) {
   try {
@@ -19,79 +21,126 @@ async function createFolders(dirPath) {
   return Promise.resolve();
 }
 
-function download(url, dest) {
-  http.get(`${url}`, (response) => {
-    const file = fs.createWriteStream(dest);
-    response.pipe(file);
-  }).on('error', (err) => {
-    fs.unlink(dest);
-    return Promise.reject(err);
-  });
-}
+async function download(url, dest) {
+  const stream = fs.createWriteStream(dest);
 
-async function downloadFiles(outDir) {
-  const languages = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt'];
-
-  const agLang = 'http://dofusretro.cdn.ankama.com/lang';
-
-  const parentDir = path.dirname(outDir);
-
-  console.log(`Downloading [${agLang}/versions.swf] file`);
+  let body;
   try {
-    await download(`${agLang}/versions.swf`, `${parentDir}/versions.swf`);
+    const res = await fetch(url);
+    body = await res.body;
   } catch (err) {
     console.error(err);
-    console.error(`Cannot download file [${agLang}/versions.swf]`);
+    return Promise.reject(new TypeError(`Cannot download file [${url}]`));
   }
 
-  for (let i = 0; i < languages.length; i += 1) {
-    const language = languages[i];
+  try {
+    await finished(Readable.fromWeb(body).pipe(stream));
+  } catch (err) {
+    console.error(err);
+    return Promise.reject(new TypeError(`Cannot save file [${dest}]`));
+  }
 
-    console.log(`Downloading [${agLang}/versions_${language}.txt] file`);
-    try {
-      await download(`${agLang}/versions_${language}.txt`, `${parentDir}/versions_${language}.txt`);
-    } catch (err) {
-      console.error(err);
-      console.error(`Cannot download file [${agLang}/versions_${language}.txt]`);
+  return Promise.resolve();
+}
+
+async function readFileContent(filePath) {
+  let fileContent;
+  try {
+    fileContent = await readFile(path.resolve(filePath), { encoding: 'utf8' });
+  } catch (err) {
+    return Promise.reject(new TypeError(`Cannot read file [${filePath}]`));
+  }
+
+  if (fileContent.length <= 0) {
+    return Promise.reject(new TypeError(`File [${filePath}] is empty`));
+  }
+
+  return fileContent;
+}
+
+function template(sentence, params) {
+  let res = sentence;
+  Object.entries(params).forEach((param) => {
+    res = res.replaceAll(`{${param[0]}}`, param[1]);
+  });
+
+  return res;
+}
+
+async function getLangFiles() {
+  for (let i = 0; i < Object.keys(config.cdn).length; i += 1) {
+    const cdn = Object.keys(config.cdn).at(i);
+
+    if (!cdn) {
+      console.error(`CDN [${cdn}] not found`);
     }
 
-    let fileContent;
+    const outputDir = path.resolve(__dirname, config.dest);
+
     try {
-      fileContent = await readFile(`${parentDir}/versions_${language}.txt`, { encoding: 'utf8' });
+      await createFolders(path.resolve(outputDir, cdn, 'lang', 'swf'));
     } catch (err) {
       console.error(err);
-      console.error(`Cannot read file [${parentDir}/versions_${language}.txt]`);
-    }
-
-    if (fileContent.length <= 0) {
-      console.error(`File [${parentDir}/versions_${language}.txt] is empty`);
       continue;
     }
 
-    const reg = new RegExp(/([a-zA-Z]*,[a-z]*,[0-9]*)/g);
-    const matchs = [];
-    let match = null;
+    for (let j = 0; j < config.lang.length; j += 1) {
+      const lang = config.lang.at(j);
 
-    // Get all occurances (FILE_LANGAUAGE_VERSION)
-    while (match = reg.exec(fileContent)) {
-      matchs.push(match);
-    }
+      const versionFileUri = template(config.versionFileUri, { cdn: config.cdn[cdn], lang });
+      const versionFilePath = template(config.versionFileUri, { cdn: `${cdn}/`, lang });
+      const versionOutputPath = path.resolve(`${outputDir}/${versionFilePath}`);
 
-    for (let j = 0; j < matchs.length; j += 1) {
-      const [m] = matchs[j];
-      const data = /([a-zA-Z]*),([a-z]*),([0-9]*)/g.exec(m);
-
-      console.log(`Downloading [${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf] file`);
+      console.log(`Downloading [${versionFileUri}] version file`);
       try {
-        await download(`${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf`, `${outDir}/${data[1]}_${data[2]}_${data[3]}.swf`);
+        await download(versionFileUri, versionOutputPath);
       } catch (err) {
         console.error(err);
-        console.error(`Cannot download file [${agLang}/swf/${data[1]}_${data[2]}_${data[3]}.swf]`);
+        continue;
+      }
+
+      let fileContent;
+      try {
+        fileContent = await readFileContent(versionOutputPath);
+      } catch (err) {
+        console.error(err);
+        console.error(`Cannot read file [${versionOutputPath}]`);
+        continue;
+      }
+
+      const reg = new RegExp(/([a-zA-Z]*,[a-z]*,[0-9]*)/g);
+      const matchs = [];
+      let match = null;
+
+      // Get all occurances (<file>_<language>_<version>)
+      while (match = reg.exec(fileContent)) {
+        matchs.push(match);
+      }
+
+      for (let k = 0; k < matchs.length; k += 1) {
+        const { groups } = /(?<file>[a-z]*),(?<language>[a-z]*),(?<version>[0-9]*)/g.exec(matchs.at(k).at(0));
+        const { file, language, version } = groups;
+
+        const swfFileUri = template(config.swfFileUri, {
+          cdn: config.cdn[cdn], file, lang: language, version,
+        });
+        const swfFilePath = template(config.swfFileUri, {
+          cdn: `${cdn}/`, file, lang: language, version,
+        });
+        const swfOutputPath = path.resolve(`${outputDir}/${swfFilePath}`);
+
+        console.log(`Downloading [${swfFileUri}] swf file`);
+        try {
+          await download(swfFileUri, swfOutputPath);
+        } catch (err) {
+          console.error(err);
+          console.error(`Cannot download file [${swfFileUri}]`);
+          continue;
+        }
       }
     }
   }
 }
 
-createFolders(outSwf)
-  .then(downloadFiles(outSwf))
+getLangFiles()
   .catch(console.error);
